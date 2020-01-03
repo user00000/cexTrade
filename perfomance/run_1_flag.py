@@ -52,7 +52,7 @@ check_order_time_end = 0
 
 market = 'BTC/USD'
 
-print('==========')
+print('==========',time.time())
 
 actOrders = ActiveOrders()  # список теукущих ордеров
 
@@ -98,7 +98,6 @@ while 1 == 1:
 
             dCalctime = tcalc2 - tcalc1  # Время работы  расчета
 
-            print('curr_tik=', curr_tik, 'dCalctime=', dCalctime, 't1=', tcalc1, 't2=', tcalc2)
 
             # if dCalctime > DELTA_T:  # расчет был слишком долгий  dCalctime > timedelta(seconds=DELTA_T) - в формате
             #    print('Too long calc at tik=', curr_tik, ' startCalcPeriodTime=', datetime.fromtimestamp(startCalcPeriodTime))
@@ -130,9 +129,9 @@ while 1 == 1:
                 place_order = {'id': id, 'amount': amount, 'price': price, 'ord_time': ord_time, 'type': r_act,
                                'x': x_reserv}
 
-                print('n=', n, 'place', place_order, datetime.fromtimestamp(id), id)
-                print('  startCalcPeriodTime=', datetime.fromtimestamp(startCalcPeriodTime), startCalcPeriodTime)
-                print('  ord_time           =', datetime.fromtimestamp(ord_time), ord_time)
+                #print('n=', n, 'place', place_order, datetime.fromtimestamp(id), id)
+                #print('  startCalcPeriodTime=', datetime.fromtimestamp(startCalcPeriodTime), startCalcPeriodTime)
+                #print('  ord_time           =', datetime.fromtimestamp(ord_time), ord_time)
 
                 actOrders.addOrder(place_order['id'], place_order)
                 deposit.changeBlnc(-x_reserv, 'USD')  # Проверка достаточности баланса проверяется в calculation
@@ -208,7 +207,6 @@ while 1 == 1:
             time_e = time.time()  # время завершения расчета
             reset_time = startCalcPeriodTime + int((time_e - time_s))
 
-            print('n=', n, 'act=', r_act)
 
             if (r_act == 'cancel'):
 
@@ -226,8 +224,7 @@ while 1 == 1:
                 # Если true, то обработка баланса(возврат к предыдущему)
 
                 # В тесте необходимо проверить вручную на промежутке (time_order_place;tcalc2) либо (startCalcPeriodTime,tcalc2)
-                print('n=', n, 'res=', res, 'reset_time=', reset_time, datetime.fromtimestamp(reset_time),
-                      res['type'])
+
                 #order_reset = {'id': id, 'order_time': reset_time, 'status': 'ok'}  # сумма, которая возвращается не логируется
                 removed = actOrders.removeOrder(id)  # ордер, который сняли
                 removed.update({'reset_time':reset_time})
@@ -239,7 +236,7 @@ while 1 == 1:
                 if (ord_type == 'sell'):
                     xc = removed['amount']
                     deposit.changeBlnc(xc, 'BTC')  # возвратили btc на депозит
-                print('r=',removed)
+
                 log.log_action(conn, removed, 'cancel',market)
 
                 f_orderIsSet = 0
@@ -269,3 +266,5 @@ while 1 == 1:
         prev_tik = curr_tik
 
 dbconn.closeConnect(conn)
+
+print('==========',time.time())

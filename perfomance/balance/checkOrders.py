@@ -5,8 +5,6 @@
 #Проверка ордера на заданном интервале
 def checkOrder(connect,startPeriod,endPeriod,order_list):
 
-
-
     #На вход подается список ордеров в ожидании order_list
     # структура словаря order_list = {id: order}
     # структура ордера order = {'id': id, 'amount': amount, 'price': price, 'time': ord_time, 'type': r_act}
@@ -28,6 +26,8 @@ def checkOrder(connect,startPeriod,endPeriod,order_list):
               ')';
 
     for x in order_list:
+
+
         order_price = order_list[x]['price']
         type =  order_list[x]['type']
 

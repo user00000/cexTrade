@@ -7,25 +7,28 @@
 
 import time
 from datetime import datetime
-from datetime import timedelta
 
 from perfomance.data.dataTic import *
 from perfomance.TikQueue import TikQueue
 
-from function.calcflag import calcOrder
+from perfomance.balance.checkOrders import checkOrder
 
 from algorithms.alg1 import calculation
-from algorithms.alg1.logAction import mark_active_orders
+import algorithms.alg1.logAction as log
+from algorithms.alg1.orders import ActiveOrders
+from perfomance.balance.balance import DepoBalance
 
 from api.cexio import Api
 
 # Константы
 
-DELTA_T = 10  # Запрос каждые десять секунд
+DELTA_T = 60  # Запрос каждые десять секунд
+LIMIT_ORDER = 5 #5 - лимит на количество установленныйх ордеров
 START_DATE = '2019-02-03 11:05:17'  # Стартовое время
 
 # Класс с доступом к API
 import perfomance.keys as k
+
 api = Api(k.username, k.api_key, k.api_secret)
 
 import db.connection as dbconn
@@ -33,35 +36,97 @@ import db.connection as dbconn
 conn = dbconn.getConnect()
 
 n = 0  # Начало итераций. Для тестирования
-startCalcPeriodTime = datetime.strptime(START_DATE, '%Y-%m-%d %H:%M:%S')  # Для тестирования
+startCalcPeriodTime = datetime.strptime(START_DATE, '%Y-%m-%d %H:%M:%S').timestamp()  # Для тестирования
+
 clear_history(conn, 'cex_history_tik')  # Предварительная очистка таблицы. Для тестирования.
+log.clear_log(conn)
 
 tikObj = TikQueue(5)  # Массив размером 5
 prev_tik = 0
-f_orderIsSet = 0  # флаг (установлен ли ордер)
-time_order_place = 0  # время установки флага
+orderCount = 0  # флаг (установлен ли ордер)
+order_place_time = 0  # время установки флага
 tcalc1 = 0  # время до рассчета
 tcalc2 = 0  # время после рассчета
+
+check_order_time_start = 0
+check_order_time_end = 0
+
+market = 'BTC/USD'
+
+print('==========',time.time())
+
+actOrders = ActiveOrders()  # список теукущих ордеров
+
+deposit = DepoBalance()  # Баланс
+deposit.setBTCblnc(0.00100008)
+deposit.setRUBblnc(5)
+deposit.setUSDblnc(27)
+
+
+def setOrder(res):
+    new_order = 0
+
+    r_act = res['type']  # результат. какое действие делать
+
+    if (r_act == 'stop'):  # остановка
+        exit()
+
+    if (r_act == 'buy' or r_act == 'sell'):
+        amount = res['amount']  # количество
+        price = res['price']  # по какой цене
+        x_reserv = res['x']
+
+        # api set order   # установка ордера через API
+        # PRIVATE API place_order = api.buy_limit_order(amount,price,market)  # На выходе получается словарь с данными ордера
+        # Попытка
+        # time.sleep(1)
+        # Для тестирования генерация id
+        id = int(time.time())
+        ord_time = int(startCalcPeriodTime) + int(time.time() - tcalc1)  # Время (по тестовым данным) установки
+        order_place_time = ord_time  # время установки флага
+
+        chech_order_time_start = ord_time
+
+        # реализовать Проверка в балансе
+
+        place_order = {'id': id, 'amount': amount, 'price': price, 'ord_time': ord_time, 'type': r_act,
+                       'x': x_reserv}
+
+        # print('n=', n, 'place', place_order, datetime.fromtimestamp(id), id)
+        # print('  startCalcPeriodTime=', datetime.fromtimestamp(startCalcPeriodTime), startCalcPeriodTime)
+        # print('  ord_time           =', datetime.fromtimestamp(ord_time), ord_time)
+
+        actOrders.addOrder(place_order['id'], place_order)
+        deposit.changeBlnc(-x_reserv, 'USD')  # Проверка достаточности баланса проверяется в calculation
+        log.log_action(conn, place_order, r_act, market)
+        # -----тестирование----------
+
+        new_order = 1
+
+    return new_order
+
+
+
+
 
 while 1 == 1:
     n = n + 1
     if (n > 60): break  # Завершение цикла при тестировании
 
     # time.sleep(DELTA_T)   #Задержка по времени (реализовать в реальном времни) DELTA_T можно менять в зависимости от времени расчета
-    startCalcPeriodTime = startCalcPeriodTime + timedelta(
-        seconds=DELTA_T)  # В тесте время запроса рассчитывается  !!!! Возможно надо перенести в конец цикла
+    startCalcPeriodTime = startCalcPeriodTime + DELTA_T  # В тесте время запроса рассчитывается  !!!! Возможно надо перенести в конец цикла
+
     # DELTA_T должно быть больше dT1 и dT2, тогда переносить не надо. Но период для проверки флага надо изменить
 
     # Получение последних 1000 tik на данный момент
     # Данные должны получаться через api
     r = f_data_tic_imitation(conn, startCalcPeriodTime)  # Эмулированный результат
 
-    tcalc1 = datetime.time()  # Время начала рассчетов.  Текущее время. Время,когда начался процесс рассчета
-
+    tcalc1 = time.time()  # datetime.now()-  формате. Время начала рассчетов.  Текущее время. Время,когда начался процесс рассчета
     curr_tik = r[0]['tid']  # максимальный tik_id из полученного запроса
 
-    if (
-            curr_tik != prev_tik):  # Только если за промежуток были новые данные. Могут и не быть(если ничего не происходит)
+    # print(n,'tik',prev_tik==curr_tik)
+    if (curr_tik != prev_tik):  # Только если за промежуток были новые данные. Могут и не быть(если ничего не происходит)
 
         new_data = [x for x in r if x['tid'] > prev_tik]  # Новые данные из полученных 1000 значений
         tikObj.add_tail(new_data)
@@ -70,156 +135,153 @@ while 1 == 1:
         # save_tik(conn,new_data) Сохраняем, чтобы можно было проверить сработал ли флаг не  через API
 
         # =====Алгоритм===========
-        '''Алгоритм расчитывать только одну позицию
-          если делать несколько позиций, то f_orderIsSet надо увеличивать на 1 либо уменьшать на 1 при закрытии
-          если выход их всех ордеров то выставлять 0'''
+        '''Алгоритм расчитывает несколько позиций'''
 
-        # Расчет. Анализ данных. Вывод действия: брать/продать/оставить
-        res = calculation.calc()  # тогда делаем расчет по полученным данным. Добавить входные переменные.
-        isDone = res['flag']  # сработал ли флаг, результат на полученных данных
-
-
-        if (f_orderIsSet == 0):  # ордер не установлен
-
-
-            tcalc2 = datetime.time() # время окончания расчетов
-            #tcalc2 перевести во время данных
-            dCalctime = tcalc2 - tcalc1  # Время работы  расчета
-
-            if dCalctime > timedelta(seconds=DELTA_T):  # расчет был слишком долгий
-                print('Too long calc at tik=' + curr_tik + ' startCalcPeriodTime=' + startCalcPeriodTime)
-                continue
-
-
-            # !!!Реализовать  команда на покупку или продажу
-
-            r_act = res['action']  # результат. какое действие делать
-
-            if(r_act==res['stop']):  #остановка
-                exit()
-
-            if (r_act == 'buy' or r_act == 'sell'):
-                amount = res['amount']  # количество
-                price = res['price']    # по какой цене
-                market = 'BTC/USD'
-                # api set order   # установка ордера через API
-                # PRIVATE API place_order = api.buy_limit_order(amount,price,market)  # На выходе получается словарь с данными ордера
-                #Попытка
-
-                #Для тестирования генерация id
-                id = int(time.time())
-                ord_time = int(startCalcPeriodTime.timestamp()) + (datetime.time() - tcalc1)  #Время (по тестовым данным) установки
-                #если несколько ордеров, то надо делать словарь (id-время)
-                time_order_place = ord_time
-                #реализовать Проверка в балансе
-                place_order = {'id':id,'amount':amount,'price':price,'time':ord_time, 'type': r_act}
-
-                mark_active_orders(place_order , action='place')  #action передается отдельно, т.к. API не возврвщает тип в случае сброса ордддера
-                f_orderIsSet = 1   # f_orderIsSet = f_orderIsSet + 1
-
-                continue
-
-
-            if (r_act == 'cancel'):
-
-                id = res['id']
-                ord_time = int(startCalcPeriodTime.timestamp()) + ( datetime.time() - tcalc1)  # Время (по тестовым данным) установки
-                order_reset = {'id': id,'time':ord_time}
-                # API return true/false
-                #Если false => сработал либо связь
-                #Если сработал => Проверка баланса через API
-                #Далее обработка баланса и переъход на след шаг
-
-                #Если true, то обработка баланса(возврат к предыдущему)
-
-                #В тесте необходимо проверить вручную на промежутке (time_order_place;tcalc2) либо (startCalcPeriodTime,tcalc2)
-
-
-
-                mark_active_orders(order_reset, action='cancel')  # добавить order_buy в словарь id ордера
-                f_orderIsSet = 0  #f_orderIsSet = f_orderIsSet - 1
-
-                continue
-
-            if (r_act == 'cancelALL'):
-                # res_api = ...
-                # list_orders = reas_api['data']
-
-                f_orderIsSet = 0
-
-
-        else:  # ордер установлен, тогда проверка сработал ли он
+        #ПРОВЕРКА ОРДЕРА
+        if (orderCount > 0):  # ордер установлен, тогда проверка сработал ли он
 
             # Доп проверка
             # например calculation2
             # либо в calculation(параметр calc2=true)
 
+            # chech_order_time_start   определено при установке флага.
+            # если ордер не сработал при первой проверке, то устанавливается равным
+            # startCalcPeriodTime(предыдущая точка расчетов)
+            check_order_time_end = startCalcPeriodTime
+
             # Проверка только на следующем шаге, посе устанолвки флага, т.к. иначе данные еще не были получены
-            r_ord = checkOrder(time_order_place,startCalcPeriodTime) # Проверка флага на промежутке
-            # time_order_place < startCalcPeriodTime, т.к. time_order_place - время из предыдущего периода(шага), startCalcPeriodTime - начала текущего шага
+            orders_done = checkOrder(conn, check_order_time_start, check_order_time_end,actOrders.active_orders_list)  # Проверка флага на промежутке
 
-            #Проверку перенести в алгоритм -> тогда точно будет на след шаге
-            #Тогда в алгоритм будет передаваться флаг
-            #Тогда в это условие приходим, если в алгоритме проверка не сработала на промежутке (time_order_place,startCalcPeriodTime)
-            #и res['action'] = None т.е. ожидание => time_order_place = startCalcPeriodTime  # т.к. на прошлом промежутке ничего не произошло, то его не надо повторно проверять
-            #Тогда проверку
+            for r_ord in orders_done:  # Цикл по сработавшим ордерам
 
+                # Проверка всех ордеров по циклу
+                # В данном случае один ордер
 
+                id = r_ord['order_id']  # id сработавшего ордера
+                tik_id = r_ord['tik_id']  # tik на котором сработал ордер
+                date_id = r_ord['date_id']  # date когда сработал оредер
 
+                doneOrd = actOrders.removeOrder(id)  # сработавший ордер
+                xc = 0  # инициализация
+                ord_type = doneOrd['type']
 
-
-        if (r_ord == 1):  # Сработал
-
-            #Проверка всех ордеров по циклу
-            #if p_current in massiv < or > p in order
-
-            #get balace with API  and refresh
-            # Test calc balance
-
-            f_orderIsSet = 0
-        if(r_ord == 0): # Не сработал
-            time_order_place = startCalcPeriodTime # т.к. на прошлом промежутке ничего не произошло, то его не надо повторно проверять
+                if (ord_type == 'buy'):
+                    xc = doneOrd['amount']
+                    deposit.changeBlnc(xc, 'BTC')  # получили на депозит
 
 
+                    doneOrd.update({'tik_id':tik_id})
+                    doneOrd.update({'date_id':date_id})
+                    log.log_action(conn, doneOrd, 'bought')
+                if (ord_type == 'sell'):
+                    xc = doneOrd['x']  # сумма, которую должны получить
+                    deposit.changeBlnc(xc, 'USD')  # получили x на депозит
 
 
+                    doneOrd.update({'tik_id': tik_id})
+                    doneOrd.update({'date_id': date_id})
+                    log.log_action(conn, doneOrd, 'sold',market)
 
+                # get balace with API  and refresh
+                # Test calc balance
 
+                orderCount = orderCount - 1
 
-        # За время рассчетов мог сработать ордер
-
-        # Проверять, если был установлен флаг
-        tcalc2 = datetime.time()
-        dCalctime = tcalc2 - tcalc1  # Время работы  !!! ПРОВЕРИТЬ МОЖНО ЛИ ТАК ВЫЧИТАТЬ ВРЕМЯ
-
-        if dCalctime > timedelta(seconds=DELTA_T):  # расчет был слишком долгий
-            print('Too long calc at tik=' + curr_tik + ' startCalcPeriodTime=' + startCalcPeriodTime)
+            prev_tik = curr_tik
             continue
 
-        # tF=0 - флаг не установлен
-        order_complited = calcOrder.check_flag_imulation(conn, tF,
-                                                         startCalcPeriodTime + dCalctime)  # от флага до конца рассчета, предыдущий флаг смог сработать
-        # order_complited = flag.check_flag в реальности, просто проверить флаг или изменение баланса
-
-        if (order_complited == 1):  # Ордер сработал
-            # tF можно приравнять к startCalcPeriodTime, т.к на промежутке [tF;startCalcPeriodTime] ничего не произошло,
-            # чтобы в след раз меньше проверять данных
-
-            # Если ордер сработал, то надо расчитать баланс !!!!!!!!!!!
-            tf = startCalcPeriodTime
-            continue  # переход на след шаг. т.е. рассчет делается на след данных
-        else:
-            tF = startCalcPeriodTime
 
 
-            # tF можно приравнять к startCalcPeriodTime, т.к на промежутке tF;startCalcPeriodTime ничего не произошло,
-            # чтобы в след раз меньше проверять данных
-            pass
+        # Проверка надо ли сбросить
 
-        save_tik(conn, new_data)  # Сохранение новых данных в базе таблица истории данных cex_history_tik  dT2>0
+        time_s = time.time()
+        res = calculation.calc_reset()  # проверка надо ли сбросить флаг
+        r_act = res['type']  # результат. какое действие делать
+        time_e = time.time()  # время завершения расчета
+        reset_time = startCalcPeriodTime + int((time_e - time_s))
 
-        print(tikObj.get_type())
 
-    prev_tik = curr_tik
+        if (r_act == 'cancel'):
+
+            id = res['id']
+
+            # API  запрос на снятие флага return true/false
+            # Если false => сработал либо связь           это проверяется в тесте через  r_ord = checkOrder(startCalcPeriodTime, reset_time)
+            # Если сработал => Проверка баланса через API
+
+            # Проверка ТОЛЬКО ДЛЯ ТЕСТА   сработал ли флаг при расчете
+            r_ord = checkOrder(conn, check_order_time_start, reset_time, actOrders.active_orders_list)
+
+            # Далее обработка баланса и переъход на след шаг
+
+            # Если true, то обработка баланса(возврат к предыдущему)
+
+            # В тесте необходимо проверить вручную на промежутке (time_order_place;tcalc2) либо (startCalcPeriodTime,tcalc2)
+
+            #order_reset = {'id': id, 'order_time': reset_time, 'status': 'ok'}  # сумма, которая возвращается не логируется
+            removed = actOrders.removeOrder(id)  # ордер, который сняли
+            removed.update({'reset_time':reset_time})
+            xc = 0
+            ord_type = removed['type']
+            if (ord_type == 'buy'):
+                xc = removed['x']  # зарезервированная сумма
+                deposit.changeBlnc(xc, 'USD')  # возвратили x на депозит
+            if (ord_type == 'sell'):
+                xc = removed['amount']
+                deposit.changeBlnc(xc, 'BTC')  # возвратили btc на депозит
+
+            log.log_action(conn, removed, 'cancel',market)
+
+            orderCount = orderCount - 1
+            prev_tik = curr_tik
+            continue
+
+        if (r_act == 'cancelALL'):
+            # res_api = ...
+            # list_orders = reas_api['data']
+            orderCount = 0
+            # За время рассчетов мог сработать ордер
+            # Проверять, если был установлен флаг
+            check_order_time_start = startCalcPeriodTime  # т.к. на прошлом промежутке ничего не произошло, то его не надо повторно проверять
+            tcalc2 = time.time()
+            dCalctime = tcalc2 - tcalc1  # Время работы  !!! ПРОВЕРИТЬ МОЖНО ЛИ ТАК ВЫЧИТАТЬ ВРЕМЯ
+
+            # if dCalctime > DELTA_T:  # расчет был слишком долгий
+            #    print('Too long calc at tik=' + curr_tik + ' startCalcPeriodTime=' + startCalcPeriodTime)
+            #    continue
+
+        prev_tik = curr_tik
+
+
+        #РАСЧЕТ НА УСТАНОВКУ ОРДЕРА
+        if (orderCount <= LIMIT_ORDER):  # лимит на количество установленныйх ордеров
+
+            # Расчет. Анализ данных. Вывод действия: брать/продать/оставить
+            #======1 алгоритм на установку==========
+            res = calculation.calc()  # тогда делаем расчет по полученным данным. Добавить входные переменные.
+            tcalc2 = time.time()  # время окончания расчетов
+            dCalctime = tcalc2 - tcalc1  # Время работы  расчета
+
+            # if dCalctime > DELTA_T:  # расчет был слишком долгий  dCalctime > timedelta(seconds=DELTA_T) - в формате
+            #    print('Too long calc at tik=', curr_tik, ' startCalcPeriodTime=', datetime.fromtimestamp(startCalcPeriodTime))
+            #    continue
+            n = setOrder(res)
+            orderCount = orderCount+n
+            #=======1==========
+
+            #Повторить для другого расчета
+
+
+
+
+            chech_order_time_start = int(startCalcPeriodTime) + int(time.time() - tcalc1)
+            prev_tik = curr_tik
+            continue
+
+
 
 dbconn.closeConnect(conn)
+
+
+
+

@@ -1,0 +1,29 @@
+# Created by .ignore support plugin (hsz.mobi)
+.gitignore
+.idea/
+PN3_db.db
+PN3_db_1.db
+__pycache__/
+algorithms/__pycache__/
+algorithms/alg1/__pycache__/
+api/__pycache__/
+ctst.py
+ctst2.pyx
+db/__pycache__/
+function/__pycache__/
+function/calcflag/__pycache__/
+function/depo/__pycache__/
+function/info/__pycache__/
+function/info/infocalc/__pycache__/
+history/
+key.txt
+parameters/__pycache__/
+perfomance/__pycache__/
+perfomance/balance/__pycache__/
+perfomance/data/__pycache__/
+src/
+tst.py
+tst2.py
+tst3.py
+util/__pycache__/
+"\321\200\320\260\321\201\321\207\320\265\321\202\321\213 \320\276\320\277\320\270\321\201\320\260\320\275\320\270\321\217/"

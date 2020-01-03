@@ -59,7 +59,6 @@ def log_action(conn, order_values, type, market):
             , 'total_quote': None
         }
 
-        print('v=',values)
 
     if (type == 'sell'):
         amount = order_values['amount']
@@ -165,14 +164,11 @@ def log_action(conn, order_values, type, market):
             , 'total_quote': None
         }
 
-        print('v=',values)
-
 
 
     ins_query = 'INSERT INTO transaction_log (real_time,id,tik_done,order_time,type,base,quote,amount,price,fee,change_base,change_quote,total_base,total_quote) ' \
                 'VALUES(:real_time,:id,:tik_done,:order_time,:type,:base,:quote,:amount,:price,:fee,:change_base,:change_quote,:total_base,:total_quote);'
 
-    print(values)
 
     # conn = cn.getConnect()
     cursor = conn.cursor()
